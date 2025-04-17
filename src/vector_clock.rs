@@ -53,7 +53,7 @@ where
     ///
     /// If events `x` and `y` occurred at respective processes `i` and `j` who have corresponding
     /// vector clocks `V_i` and `V_j`, then `x -> y` if, and only if, `V_i[i] < V_j[i]`; otherwise,
-    /// `x || y` (see [`VectorClock::is_concurrent`]).
+    /// `x || y` (see [`VectorClock::is_concurrent_with`]).
     #[inline]
     pub fn happens_before(&self, other: &Self) -> bool {
         self < other
@@ -62,7 +62,7 @@ where
     /// Returns whether this vector clock represents a state that is concurrent with the incoming
     /// vector clock (see documentation for [`VectorClock::happens_before`] for more detail).
     #[inline]
-    pub fn is_concurrent(&self, other: &Self) -> bool {
+    pub fn is_concurrent_with(&self, other: &Self) -> bool {
         !self.happens_before(other)
     }
 
@@ -262,8 +262,6 @@ mod tests {
 
         // (2.1)
         vc2.bump();
-        println!("1: {:?} 2: {:?}", vc1, vc2);
-
         // (1.1)
         vc1.bump();
         // (1.2)
@@ -272,8 +270,8 @@ mod tests {
         // (3.1)
         vc3.bump();
 
-        println!("1: {:?} 2: {:?}", vc1, vc2);
         assert!(vc1.happens_before(&vc2));
-        assert!(!vc1.happens_before(&vc3));
+        assert!(vc3.is_concurrent_with(&vc1));
+        assert!(vc3.is_concurrent_with(&vc2));
     }
 }
