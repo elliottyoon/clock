@@ -32,11 +32,6 @@ where
     /// - `U || V` (are **concurrent**) if neither `U < V` nor `V < U`, i.e. with respect to the
     ///   notion of partial ordering, we'd say `U` and `V` are **not comparable**.
     ///
-    /// If events `x` and `y` occurred at respective processes `i` and `j` who have corresponding
-    /// vectors `V_i` and `V_j`, then
-    /// - `x -> y` if, and only if, `V_i[i] < V_j[i]`;
-    /// - otherwise, `x || y`.
-    ///
     /// _(Note that we're conflating a process `p_i` with its index `i` in {1, ..., N}. In practice,
     /// we could have a mapping between the process's index `i` in the vector and its process id.)_
     clock: HashMap<K, V>,
@@ -66,6 +61,16 @@ where
             None => V::default(),
         };
         self.clock.insert(self.i.clone(), value);
+    }
+
+    /// Returns whether this vector clock represents a state that is causal to the state that is
+    /// represented by the incoming vector clock.
+    ///
+    /// If events `x` and `y` occurred at respective processes `i` and `j` who have corresponding
+    /// vector clocks `V_i` and `V_j`, then `x -> y` if, and only if, `V_i[i] < V_j[i]`; otherwise,
+    /// `x || y`.
+    pub fn happens_before(&self, other: &Self) -> bool {
+        self < other
     }
 
     /// Merges this vector clock, in place, with the incoming one, taking each merged entry to be
