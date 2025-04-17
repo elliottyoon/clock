@@ -144,7 +144,6 @@ where
         struct HasCmp {
             has_greater: bool,
             has_less: bool,
-            has_equal: bool,
         }
         fn subset_cmp<K, V>(left: &VectorClock<K, V>, right: &VectorClock<K, V>) -> HasCmp
         where
@@ -153,7 +152,6 @@ where
         {
             let mut has_greater = false;
             let mut has_less = false;
-            let mut has_equal = false;
 
             for (k, left_v) in left.clock.iter() {
                 match right.clock.get(k) {
@@ -165,13 +163,15 @@ where
                             has_less = true;
                         }
                         Some(Ordering::Equal) => {
-                            has_equal = true;
+                           // no-op
                         }
                         None => unreachable!(),
                     },
                     None => match V::default().cmp(left_v) {
                         Ordering::Less => has_greater = true,
-                        Ordering::Equal => has_equal = true,
+                        Ordering::Equal => {
+                            // no-op
+                        }
                         Ordering::Greater => {
                             unreachable!("Default value should be the minimum possible value.")
                         }
@@ -182,19 +182,16 @@ where
             HasCmp {
                 has_greater,
                 has_less,
-                has_equal,
             }
         }
 
-        let (has_greater, has_less, has_equal) = {
+        let (has_greater, has_less) = {
             let HasCmp {
                 has_greater: self_has_greater,
-                has_equal: self_has_equal,
                 ..
             } = subset_cmp(self, other);
             let HasCmp {
                 has_greater: other_has_greater,
-                has_equal: other_has_equal,
                 ..
             } = subset_cmp(other, self);
 
@@ -212,19 +209,18 @@ where
             (
                 self_has_greater,
                 other_has_greater,
-                self_has_equal || other_has_equal,
             )
         };
 
-        match (has_greater, has_less, has_equal) {
-            // V[i] > V'[i] for all i => V > V'
-            (true, false, false) => Some(Ordering::Greater),
-            // V[i] < V'[i] for all i => V < V'
-            (false, true, false) => Some(Ordering::Less),
+        match (has_greater, has_less) {
+            // V[i] >= V'[i] for all i, and there exists some j such that V[j] > V'[j] => V > V'
+            (true, false) => Some(Ordering::Greater),
+            // V[i] <= V'[i] for all i, and there exists some j such that V[j] < V'[j] => V < V'
+            (false, true) => Some(Ordering::Less),
             // V[i] = V'[i] for all i => V = V'
-            (false, false, true) => Some(Ordering::Equal),
+            (false, false) => Some(Ordering::Equal),
             // Non-comparable, i.e. concurrent clocks!
-            _ => None,
+            (true, true) => None,
         }
     }
 }
