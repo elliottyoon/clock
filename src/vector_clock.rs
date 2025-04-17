@@ -209,10 +209,12 @@ where
         let (has_greater, has_less) = {
             let HasCmp {
                 has_greater: self_has_greater,
+                has_less: _self_has_less,
                 ..
             } = subset_cmp(self, other);
             let HasCmp {
                 has_greater: other_has_greater,
+                has_less: _other_has_less,
                 ..
             } = subset_cmp(other, self);
 
