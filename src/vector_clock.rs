@@ -1,19 +1,7 @@
-// TODO:
-// - async
-// - epochs
-
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::Add;
 
-// Rules for updating clocks
-// 1. On local event or sending of message `m`
-//    - V_i[i] += 1
-//    - Piggyback V_i along with m
-// 2. On receiving message `m` from `p_j` with vector `V_m`,
-//    - For each `k` in [1, N]:
-//      - V_i[k] <- max(V_i[k], V_m[k])
-//    - V_i[i] <- V_i[i] + 1
 #[derive(Debug, Clone)]
 pub struct VectorClock<K = usize, V = usize>
 where
