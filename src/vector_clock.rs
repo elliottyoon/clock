@@ -17,7 +17,8 @@ where
     ///
     /// Comparing vector timestamps `U` and `V`, we say
     /// - `U == V` if, and only if, `U[i] == V[i]` for each `i` in {1, ..., N},
-    /// - `U < V` if, and only if, `U[i] < V[i]` for each `i` in {1, ..., N},
+    /// - `U < V` if, and only if, `U[i] <= V[i]` for each `i` in {1, ..., N} _and_ there exists
+    ///           some `j` such that `U[j] < V[j]`, and
     /// - `U || V` (are **concurrent**) if neither `U < V` nor `V < U`, i.e. with respect to the
     ///   notion of partial ordering, we'd say `U` and `V` are **not comparable**.
     ///
