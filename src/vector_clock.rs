@@ -14,7 +14,7 @@ use std::ops::Add;
 //    - For each `k` in [1, N]:
 //      - V_i[k] <- max(V_i[k], V_m[k])
 //    - V_i[i] <- V_i[i] + 1
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VectorClock<K = usize, V = usize>
 where
     K: Eq + std::hash::Hash + Clone,
@@ -54,15 +54,6 @@ where
         }
     }
 
-    /// Fetches the clock's value for a given key, if such an entry exists. Otherwise, returns the
-    /// default value.
-    pub(crate) fn get(&self, key: &K) -> V {
-        match self.clock.get(key) {
-            Some(value) => value.clone(),
-            None => V::default(),
-        }
-    }
-
     /// Increments the owning process's corresponding value in the vector clock.
     pub fn bump(&mut self) {
         let value = self.clock.get(&self.i).unwrap_or(&V::default()).clone() + V::from(1);
@@ -74,14 +65,54 @@ where
     ///
     /// If events `x` and `y` occurred at respective processes `i` and `j` who have corresponding
     /// vector clocks `V_i` and `V_j`, then `x -> y` if, and only if, `V_i[i] < V_j[i]`; otherwise,
-    /// `x || y`.
+    /// `x || y` (see [`VectorClock::is_concurrent`]).
+    #[inline]
     pub fn happens_before(&self, other: &Self) -> bool {
         self < other
     }
 
+    /// Returns whether this vector clock represents a state that is concurrent with the incoming
+    /// vector clock (see documentation for [`VectorClock::happens_before`] for more detail).
+    #[inline]
+    pub fn is_concurrent(&self, other: &Self) -> bool {
+        !self.happens_before(other)
+    }
+
+    /// When a process intends on sending a message to another process, prepares the sending
+    /// process's vector clock to be piggybacked along with the message.
+    ///
+    /// Upholds the vector clock invariant that the value corresponding to the sending process in
+    /// the sending process's vector clock must be incremented before being sent.
+    #[inline]
+    pub fn send(&mut self) -> Self {
+        self.bump();
+        self.clone()
+    }
+
+    /// When a process receives a message from another process, maintains the vector clock
+    /// invariant that both:
+    /// - each entry of the receiving process's vector clock must be updated to be the max value
+    ///   between it and the corresponding value of the incoming message's vector clock, and
+    /// - after the merge described above, the value corresponding to the receiving process in the
+    ///   receiving process's vector clock must be incremented.
+    #[inline]
+    pub fn receive(&mut self, incoming_clock: &Self) {
+        self.merge(incoming_clock);
+        self.bump();
+    }
+
+    /// Fetches the clock's value for a given key, if such an entry exists. Otherwise, returns the
+    /// default value.
+    fn get(&self, key: &K) -> V {
+        match self.clock.get(key) {
+            Some(value) => value.clone(),
+            None => V::default(),
+        }
+    }
+
     /// Merges this vector clock, in place, with the incoming one, taking each merged entry to be
     /// the maximum between the two entries.
-    pub fn merge(&mut self, other: &VectorClock<K, V>) {
+    fn merge(&mut self, other: &VectorClock<K, V>) {
         for (k, other_v) in other.clock.iter() {
             // Only overwrite/insert a `key`/`value` pair from other into self if `value` is
             // greater than what we currently have in self corresponding to `key`.
@@ -104,6 +135,7 @@ where
         // Returns if for every value in the left clock, the corresponding key's value in the right
         // clock (or the default value, if the key doesn't exist) is equal to it. You can think of
         // this as subset equality, returning if `left` is a subset of `right`.
+        #[inline]
         fn subset_eq<K, V>(left: &VectorClock<K, V>, right: &VectorClock<K, V>) -> bool
         where
             K: Eq + std::hash::Hash + Clone,
@@ -145,6 +177,7 @@ where
             has_greater: bool,
             has_less: bool,
         }
+        #[inline]
         fn subset_cmp<K, V>(left: &VectorClock<K, V>, right: &VectorClock<K, V>) -> HasCmp
         where
             K: Eq + std::hash::Hash + Clone,
@@ -163,7 +196,7 @@ where
                             has_less = true;
                         }
                         Some(Ordering::Equal) => {
-                           // no-op
+                            // no-op
                         }
                         None => unreachable!(),
                     },
@@ -206,10 +239,7 @@ where
             // equal). Thus, we have that `other_has_greater => self_has_less` so it's actually
             // sufficient to check only that `other_has_greater` is true to determine that there
             // is a value in `self` that is less than the corresponding one in `other`.
-            (
-                self_has_greater,
-                other_has_greater,
-            )
+            (self_has_greater, other_has_greater)
         };
 
         match (has_greater, has_less) {
@@ -244,12 +274,13 @@ mod tests {
 
         // (2.1)
         vc2.bump();
+        println!("1: {:?} 2: {:?}", vc1, vc2);
+
         // (1.1)
         vc1.bump();
         // (1.2)
-        vc1.bump();
-        vc2.merge(&vc1);
-        vc2.bump();
+        let sending_clock = vc1.send();
+        vc2.receive(&sending_clock);
         // (3.1)
         vc3.bump();
 
