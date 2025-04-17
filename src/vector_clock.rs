@@ -14,7 +14,8 @@ use std::ops::Add;
 //    - For each `k` in [1, N]:
 //      - V_i[k] <- max(V_i[k], V_m[k])
 //    - V_i[i] <- V_i[i] + 1
-struct VectorClock<K = usize, V = usize>
+#[derive(Debug)]
+pub struct VectorClock<K = usize, V = usize>
 where
     K: Eq + std::hash::Hash + Clone,
     V: Add<V, Output = V> + From<u8> + Ord + Default + Clone,
@@ -45,6 +46,14 @@ where
     K: Eq + std::hash::Hash + Clone,
     V: Add<V, Output = V> + From<u8> + Ord + Default + Clone,
 {
+    /// Constructs a new vector clock for the given process identifier.
+    pub fn new(i: K) -> VectorClock<K, V> {
+        Self {
+            clock: HashMap::new(),
+            i,
+        }
+    }
+
     /// Fetches the clock's value for a given key, if such an entry exists. Otherwise, returns the
     /// default value.
     pub(crate) fn get(&self, key: &K) -> V {
@@ -56,10 +65,7 @@ where
 
     /// Increments the owning process's corresponding value in the vector clock.
     pub fn bump(&mut self) {
-        let value = match self.clock.get(&self.i) {
-            Some(value) => value.clone() + V::from(1),
-            None => V::default(),
-        };
+        let value = self.clock.get(&self.i).unwrap_or(&V::default()).clone() + V::from(1);
         self.clock.insert(self.i.clone(), value);
     }
 
@@ -220,5 +226,39 @@ where
             // Non-comparable, i.e. concurrent clocks!
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::vector_clock::VectorClock;
+
+    #[test]
+    fn test_causality() {
+        let (p1, p2, p3) = (1, 2, 3);
+        let [mut vc1, mut vc2, mut vc3] = [p1, p2, p3].map(VectorClock::<usize, usize>::new);
+
+        // - Process 1 will (1) bump, (2) send a message to p2, (3), bump, (4) receive a message
+        //   from p3, and (5) send a message to p2.
+        // - Process 2 will (1) bump, (2) receive a message from p1, (3) send a message to p3,
+        //   (4) bump, (5) receive a message from p1, and (6) bump.
+        // - Process 3 will (1) bump, (2) receive a message from p2, and (3) send a message to p1.
+        //
+        // We should have 4 causal events: (1.2/2.2), (2.3/3.2), (3.3/1.4), and (1.5/2.5).
+
+        // (2.1)
+        vc2.bump();
+        // (1.1)
+        vc1.bump();
+        // (1.2)
+        vc1.bump();
+        vc2.merge(&vc1);
+        vc2.bump();
+        // (3.1)
+        vc3.bump();
+
+        println!("1: {:?} 2: {:?}", vc1, vc2);
+        assert!(vc1.happens_before(&vc2));
+        assert!(!vc1.happens_before(&vc3));
     }
 }
