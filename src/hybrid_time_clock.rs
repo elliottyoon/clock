@@ -88,7 +88,11 @@
 use crate::LamportClock;
 
 pub struct HybridTimeClock {
+    /// The maximum physical timestamp (PT) observed so far, either from local events or received
+    /// messages. This tracks the highest PT known to the node and is monotonically non-decreasing.
     l: u64,
+    /// The logical counter used to distinguish causally related events that happen at the same
+    /// physical time `l`. This counter increments when multiple events occur with the same `l`.
     c: u64,
 }
 
@@ -108,12 +112,15 @@ impl LamportClock for HybridTimeClock {
 
 impl PartialEq<Self> for HybridTimeClock {
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        self.l == other.l && self.c == other.c
     }
 }
 
 impl PartialOrd for HybridTimeClock {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        todo!()
+        if self.l == other.l {
+            return self.c.partial_cmp(&other.c);
+        }
+        Some(self.l.cmp(&other.l))
     }
 }
