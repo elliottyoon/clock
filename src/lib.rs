@@ -1,3 +1,17 @@
+pub trait LamportClock: PartialOrd {
+    /// Updates this clock for when its respective process executes a local event.
+    fn bump(&mut self);
+
+    /// Signifies a process sending a message to another process, updating the clock's state and
+    /// producing an owned copy of the clock, which can be used by the receiving process to update
+    /// its own respective clock.
+    fn send(&mut self) -> Self;
+
+    /// Signifies a process receiving a message from another process, updating the clock's state
+    /// with the sender's clock that is piggybacked onto the received message.
+    fn receive(&mut self, incoming_clock: &Self);
+}
+
 /// The (Lamport) Clock Condition gives that if `a` happens before `b` (denoted `a -> b`), then
 /// `TS(a) < TS(b)`. Vector clocks guarantee a stronger condition: `a -> b` <=> `TS(a) < TS(b)`.
 pub mod vector_clock;

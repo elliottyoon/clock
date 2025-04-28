@@ -1,3 +1,4 @@
+use crate::LamportClock;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::ops::Add;
@@ -28,6 +29,20 @@ where
     /// The key (in the list `clock`) of the process who owns this vector clock struct, i.e.
     /// process `i` would have vector clock `VC_i` from the above description.
     i: K,
+}
+
+impl LamportClock for VectorClock {
+    fn bump(&mut self) {
+        VectorClock::bump(self);
+    }
+
+    fn send(&mut self) -> Self {
+        VectorClock::send(self)
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
+        VectorClock::receive(self, incoming_clock);
+    }
 }
 
 impl<K, V> VectorClock<K, V>
