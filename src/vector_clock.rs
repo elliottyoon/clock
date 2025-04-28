@@ -31,20 +31,6 @@ where
     i: K,
 }
 
-impl LamportClock for VectorClock {
-    fn bump(&mut self) {
-        VectorClock::bump(self);
-    }
-
-    fn send(&mut self) -> Self {
-        VectorClock::send(self)
-    }
-
-    fn receive(&mut self, incoming_clock: &Self) {
-        VectorClock::receive(self, incoming_clock);
-    }
-}
-
 impl<K, V> VectorClock<K, V>
 where
     K: Eq + std::hash::Hash + Clone,
@@ -127,6 +113,20 @@ where
                 self.clock.insert(k.clone(), other_v.clone());
             }
         }
+    }
+}
+
+impl LamportClock for VectorClock {
+    fn bump(&mut self) {
+        VectorClock::bump(self);
+    }
+
+    fn send(&mut self) -> Self {
+        VectorClock::send(self)
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
+        VectorClock::receive(self, incoming_clock);
     }
 }
 

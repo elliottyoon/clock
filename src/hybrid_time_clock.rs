@@ -85,3 +85,35 @@
 //! - **Corollary 4** Under the assumption that the time for message transmission is long enough so
 //!   that the physical clock of every node is incremented by at least `d`, a given parameter, then
 //!   `C(f) <= 1 + ϵ/d`
+use crate::LamportClock;
+
+pub struct HybridTimeClock {
+    l: u64,
+    c: u64,
+}
+
+impl LamportClock for HybridTimeClock {
+    fn bump(&mut self) {
+        todo!()
+    }
+
+    fn send(&mut self) -> Self {
+        todo!()
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
+        todo!()
+    }
+}
+
+impl PartialEq<Self> for HybridTimeClock {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
+impl PartialOrd for HybridTimeClock {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        todo!()
+    }
+}
