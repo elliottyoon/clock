@@ -259,15 +259,16 @@ mod tests {
         //   from p3, and (5) send a message to p2.
         // - Process 2 will (1) bump, (2) receive a message from p1, (3) send a message to p3,
         //   (4) bump, (5) receive a message from p1, and (6) bump.
-        // - Process 3 will (1) bump, (2) receive a message from p2, and (3) send a message to p1.
+        // - Process 3 will (1) bump, (2) receive a message from p2, (3) bump, and (4) send a
+        //   message to p1.
         //
-        // We should have 4 causal events: (1.2/2.2), (2.3/3.2), (3.3/1.4), and (1.5/2.5).
+        // We should have 4 causal events: (1.2/2.2), (2.3/3.2), (3.4/1.4), and (1.5/2.5).
 
         // (2.1)
         vc2.bump();
         // (1.1)
         vc1.bump();
-        // (1.2)
+        // (1.2 / 2.2)
         let sending_clock = vc1.send();
         vc2.receive(&sending_clock);
         // (3.1)
@@ -276,5 +277,40 @@ mod tests {
         assert!(vc1.happens_before(&vc2));
         assert!(vc3.is_concurrent_with(&vc1));
         assert!(vc3.is_concurrent_with(&vc2));
+
+        // (1.3)
+        vc1.bump();
+        // (2.3 / 3.2)
+        let sending_clock = vc2.send();
+        vc3.receive(&sending_clock);
+
+        assert!(vc2.happens_before(&vc3));
+        assert!(vc1.is_concurrent_with(&vc2));
+        assert!(vc1.is_concurrent_with(&vc3));
+
+        // (2.4)
+        vc2.bump();
+        // (3.3)
+        vc3.bump();
+        // (3.4 / 1.4)
+        let sending_clock = vc3.send();
+        vc1.receive(&sending_clock);
+
+        assert!(vc3.happens_before(&vc1));
+        assert!(vc2.is_concurrent_with(&vc1));
+        assert!(vc1.is_concurrent_with(&vc3));
+
+        // (1.5 / 2.5)
+        let sending_clock = vc1.send();
+        vc2.receive(&sending_clock);
+
+        assert!(vc1.happens_before(&vc2));
+        // p3 is "before" p1 because of (3.4/1.4).
+        assert!(!vc3.is_concurrent_with(&vc1));
+        // p3 is "after" p2 because of (2.3/3.2).
+        assert!(!vc3.is_concurrent_with(&vc2));
+
+        // (2.6)
+        vc2.bump();
     }
 }
