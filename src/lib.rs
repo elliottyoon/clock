@@ -17,20 +17,20 @@ pub trait LamportClock: PartialOrd {
 pub mod vector_clock;
 
 /// Hybrid logical time clocks preserve the Clock Condition, i.e. `a -> b` => `TS(a) < TS(b)`; and
-/// is backwards-compatible with NTC. It can be represented as a 64-bit float! Very cool.
+/// are backwards-compatible with NTC. An HLC can be represented as a 64-bit float! Very cool.
 pub mod hybrid_logical_clock;
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::hybrid_logical_clock::HybridLogicalClock;
+    use crate::vector_clock::VectorClock;
 
     #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+    fn they_are_lamport_clocks() {
+        fn assert_impl<T: LamportClock>() {}
+        // Will fail to compile if the given types don't implement the LamportClock trait.
+        assert_impl::<VectorClock>();
+        assert_impl::<HybridLogicalClock>();
     }
 }

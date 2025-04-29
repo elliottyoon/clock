@@ -187,6 +187,6 @@ impl PartialOrd for HybridLogicalClock {
         if self.l == other.l {
             return self.c.partial_cmp(&other.c);
         }
-        Some(self.l.cmp(&other.l))
+        self.l.partial_cmp(&other.l)
     }
 }
