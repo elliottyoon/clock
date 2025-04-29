@@ -62,8 +62,7 @@ impl HybridLogicalClock {
 
     /// Compacts the `l` and `c` timestamps of the clock into a single 64-bit value.
     fn compact_timestamps(&self) -> u64 {
-        let mask = 0xFFFFFFFFFFFF0000_u64;
-        let rounded_l = (self.l as u64) & mask;
+        let rounded_l = (self.l as u64) & MASK_48_MSB;
         rounded_l + self.c as u64
     }
 
