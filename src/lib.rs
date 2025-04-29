@@ -22,7 +22,7 @@ pub mod vector_clock;
 /// where ϵ denotes the clock synchronization uncertainty. Of importance to note is that hybrid
 /// time clocks preserve the Clock Condition, i.e. `a -> b` => `TS(a) < TS(b)`; and is backwards
 /// -compatible with NTC.
-pub mod hybrid_time_clock;
+pub mod hybrid_logical_clock;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
