@@ -10,85 +10,22 @@
 //! In practice, we want the size of `L(e)` to be the same as `PT(e)` (64 bits in NTP protocol).
 //! Note that goal (4) enables us to utilize HLC in place of physical time.
 //!
-//! ---
-//!
-//! A naive algorithm to satisfy requirements (1) - (4) might be intuitively proposed as follows:
-//! - Initially, `L(j) := 0`
-//! - **Send or local event**
-//!     1. `L(j) := max(1 + L(j), PT(j))`
-//!     2. Timestamp with `L(j)`
-//! - **Receive event of message `m`**
-//!     1. `L(j) := max(1 + L(j), 1 + L(m), PT(j))`
-//!     2. Timestamp with `L(j)`
-//!
-//! However, this algorithm fails to satisfy (4) due to edge cases of unbounded drift between
-//! physical and logical time. Since L is used by the algorithm to maintain both the maximum of PT
-//! values seen so far and also the logical clock increments from new events (local/send/receive),
-//! clocks lose information when it becomes unclear if the new L value came from PT or causality.
-//! Thus, there's no suitable place to reset the L value to bound the L-PT difference, as such a
-//! reset might fuck up the -> relation, violating (1) and defeating the whole purpose of having a
-//! logical clock for causality detection in the first place.
-//!
-//! Instead, we'll use a level of indirection (yay!!) to develop the correct algorithm, expanding
-//! the L(j) timestamp from the naive algorithm into two parts: L(j) and C(j), where
-//! - L(j) is introduced as a level of indirection to maintain the maximum of PT information
-//!   learned so far, and
-//! - C(j) is used to capture causality updates only when L values are equal. In contrast to the
-//!   naive algorithm where we couldn't reset L without violating ->, we can reset C when the
-//!   information heard about maximum PT catches up or goes ahead of L. Since L denotes the
-//!   *maximum* PT heard among nodes and is not necessarily continuously incremented with each
-//!   event, within a bounded time either
-//!     1. a node receives a message with a larger L, its own L value is updated and C is reset to
-//!        reflect this, or
-//!     2. its L stays the same, and its PT will catch up and update its L, followed by a reset to
-//!        C to reflect the reset.
-//!
-//! ---
-//!
-//! ## The Hybrid Lamport Clock algorithm:
-//! - `L(j) := 0, C(j) := 0`
-//! - **Send or local event**
-//!     1. `L'(j) := L(j)`
-//!     2. `L(j) := max(L'(j), PT(j))`
-//!     3. Set `C(j)` to be
-//!         - `C(j) + 1`   if `(L(j) == L'(j))`
-//!         - `0`          otherwise
-//! - **Receive event of message `m`**
-//!     1. `L'(j) := L(j)`
-//!     2. `L(j) := max(L'(j), L(m), PT(j))`
-//!     3. Set `C(j)` to be
-//!         - `1 + max(C(j), C(m))`   if      `L(j) == L'(j)) == L(m)`
-//!         - `1 + C(j)`              else if `L(j) == L'(j)`
-//!         - `1 + C(m)`              else if `L(j) == L(m)`
-//!         - 0                       otherwise.
-//!     4. Timestamp with `L(j), C(j)`
-//!
-//! Note that we compare `(L(e), C(e))` timestamp pairs lexicographically, i.e. ordered by `L`
-//! first, then by `C` if necessary.
-//! ---
-//!
-//! The paper "Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases"
-//! by Kulkarni et al. proves the following assertions given the HLC algorithm above:
-//! - **Theorem 1** For any two events `e` and `f`, `e -> f` implies `(L(e), C(e)) >= (L(e), C(f))`
-//! (Requirement 1: ✅)
-//! - **Theorem 2** For any event `f`, `L(f) >= PT(f)` (Requirement 4: ✅)
-//! - **Theorem 3** `L(f)` denotes the maximum clock value that `f` is aware of. In other words,
-//!   `L(f) > PT(f)` implies that there exists some `g` such that `g -> f` and `PT(g) = L(f)`.
-//! - **Corollary 1** For any event `f`, `|L(f) - PT(f)| <= ϵ`.
-//! - **Theorem 4** For any event `f`, if `C(f) == k` and `k > 0`, then there exist `g1, ..., gk`
-//!   such that
-//!     1. `gi -> g(i+1)` for all `1 <= j < k`,
-//!     2. `L(gi) == L(f)` for all `1 <= j <= k`, and
-//!     3. `gk -> f`.
-//! - **Corollary 2** For any event `f`, `C(f) <= |{g : g -> f and L(g) == L(f)}|`
-//! - **Corollary 3** For any event `f`, `C(f) <= N * (ϵ + 1)`.
-//! - **Corollary 4** Under the assumption that the time for message transmission is long enough so
-//!   that the physical clock of every node is incremented by at least `d`, a given parameter, then
-//!   `C(f) <= 1 + ϵ/d`
+//! See "Logical Physical Clocks and Consistent Snapshots in Globally Distributed Databases" by
+//! Kulkarni et al. for more detail in motivation, proof of correctness, properties, stress testing
+//! + performance results, and discussion.
+
 use crate::LamportClock;
-use rsntp::SntpClient;
+use rsntp::{SntpClient, SntpDuration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MASK_48_MSB: u64 = 0xFFFFFFFFFFFF0000;
+const NTP_SYNC_INTERVAL: Duration = Duration::from_secs(60);
+
+struct ClockSync {
+    ntp: SntpClient,
+    time_offset: f64,
+    last_ntp_sync: SystemTime,
+}
 
 pub struct HybridLogicalClock {
     /// The maximum physical timestamp (PT) observed so far, either from local events or received
@@ -101,13 +38,28 @@ pub struct HybridLogicalClock {
     /// timestamp to the 48 most significant bits allows for microsecond-level granularity and
     /// 16 bits for `c` gives it room to grow up to 65536, which is more than enough (probably).
     c: u16,
-    /// The NTP client used to fetch physical timestamps. This is wrapped in an Option so that
-    /// when we send an HLC to another process with a message, we don't have to actually send a
-    /// client with it, just the `l` and `c` timestamps.
-    ntp: Option<SntpClient>,
+    /// A bundle of all NTP-related state.
+    ///
+    /// When a clock is sent to another process, the only relevant fields are its timestamps
+    /// (`self.l` and `self.c`) so we can disregard all the NTP-related stuff. Wrapping it as an
+    /// `Option` allows it to have essentially no memory footprint unless we'll use it.
+    sync: Option<ClockSync>,
 }
 
 impl HybridLogicalClock {
+    /// A boring old constructor.
+    pub fn new() -> Self {
+        Self {
+            l: 0.0,
+            c: 0,
+            sync: Some(ClockSync {
+                ntp: SntpClient::new(),
+                time_offset: 0.0,
+                last_ntp_sync: SystemTime::UNIX_EPOCH,
+            }),
+        }
+    }
+
     /// Compacts the `l` and `c` timestamps of the clock into a single 64-bit value.
     fn compact_timestamps(&self) -> u64 {
         let mask = 0xFFFFFFFFFFFF0000_u64;
@@ -119,20 +71,43 @@ impl HybridLogicalClock {
     fn decompose_into_timestamps(value: u64) -> Self {
         let l = (value & MASK_48_MSB) as f64;
         let c = (value & !MASK_48_MSB) as u16;
-        HybridLogicalClock { l, c, ntp: None }
+        HybridLogicalClock { l, c, sync: None }
     }
 
-    /// Gets the current NTP timestamp as duration of seconds represented by a 64-bit float.
-    fn get_current_timestamp(&self) -> f64 {
-        self.ntp
-            .as_ref()
-            .unwrap()
-            .synchronize("pool.ntp.org")
-            .unwrap()
-            .datetime()
-            .unix_timestamp()
-            .unwrap()
-            .as_secs_f64()
+    /// Gets the current hybrid timestamp as duration of seconds represented by a 64-bit float.
+    fn get_current_timestamp(&mut self) -> f64 {
+        #[inline]
+        fn system_time_now_as_secs() -> f64 {
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+        }
+
+        let sync = self.sync.as_mut().unwrap();
+
+        // If we're out of the sync-free window, we need to resynchronize.
+        if SystemTime::now()
+            .duration_since(sync.last_ntp_sync)
+            .unwrap_or(Duration::ZERO)
+            >= NTP_SYNC_INTERVAL
+        {
+            let ntp_now = sync
+                .ntp
+                .synchronize("pool.ntp.org")
+                .unwrap()
+                .datetime()
+                .unix_timestamp()
+                .unwrap()
+                .as_secs_f64();
+            let system_now = system_time_now_as_secs();
+
+            sync.time_offset = ntp_now - system_now;
+            sync.last_ntp_sync = SystemTime::now();
+        }
+
+        // Now recompute current time using the freshest system clock + offset.
+        system_time_now_as_secs() + sync.time_offset
     }
 }
 
@@ -158,7 +133,7 @@ impl LamportClock for HybridLogicalClock {
         Self {
             c: self.c,
             l: self.l,
-            ntp: None,
+            sync: None,
         }
     }
 
@@ -193,6 +168,12 @@ impl From<u64> for HybridLogicalClock {
 impl From<HybridLogicalClock> for u64 {
     fn from(value: HybridLogicalClock) -> u64 {
         value.compact_timestamps()
+    }
+}
+
+impl Into<Duration> for HybridLogicalClock {
+    fn into(self) -> Duration {
+        Duration::from_secs_f64(self.l)
     }
 }
 
