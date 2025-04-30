@@ -20,6 +20,11 @@ pub mod vector_clock;
 /// are backwards-compatible with NTC. An HLC can be represented as a 64-bit float! Very cool.
 pub mod hybrid_logical_clock;
 
+/// Provides causality tracking in dynamic settings, e.g. peer-to-peer systems. Generalizes vector
+/// clocks and version vectors to a clock whose space requirement scales reasonably with the
+/// number of entities and grows modestly over time.
+mod interval_tree_clock;
+
 #[cfg(test)]
 mod tests {
     use super::*;
