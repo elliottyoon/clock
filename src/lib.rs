@@ -12,6 +12,9 @@ pub trait LamportClock: PartialOrd {
     fn receive(&mut self, incoming_clock: &Self);
 }
 
+/// TODO(elliottyoon): VersionVectors
+mod version_vector;
+
 /// The (Lamport) Clock Condition gives that if `a` happens before `b` (denoted `a -> b`), then
 /// `TS(a) < TS(b)`. Vector clocks guarantee a stronger condition: `a -> b` <=> `TS(a) < TS(b)`.
 pub mod vector_clock;
