@@ -38,3 +38,32 @@
 //          bounded version vectors [1] it models the atomic synchronization of two replicas.
 //          Traditional descriptions assume a starting number of participants. This can be simulated by starting
 //          from an initial seed stamp and forking several times until the required number of participants is reached.
+
+/// TODO(delete/move notes)
+///
+/// Define "unit pulse function", 1 : |R -> {0, 1}:
+/// 1'(x) := { 1 if 0 <= x < 1;
+///            0 if x < 0 or x >= 1 }
+///
+/// Define an "id tree" with recursive form (where i, i1, i2 range over id trees):
+/// i := 0 | 1 | (i1, i2)
+///
+/// Define a semantic function [] for the interpretation of id trees:
+/// [0]        = 0' : |R -> {0, 1}
+/// [1]        = 1' : |R -> {0, 1}
+/// [(i1, i2)] = λ(x): [i1](2x) + [i2](2x-1)
+/// These functions can be 1 for some sub-intervals of [0, 1) and 0 otherwise. For an id (i1, i2),
+/// the functions corresponding to the two subtrees are transformed so as to be non-zero in two
+/// non-overlapping sub-intervals: i1 in the interval [0, 1/2) and i2 in [1/2, 1). For example, the
+/// id (1, (0,1)) represents the function 1'(2x) + 1'(2x-1)(2x-1).
+///
+/// The event component is a binary event tree with non-negative integers in nodes: using e, e1, e2
+/// to range over event trees and n over non-negative integers:
+/// e := n | (n, e1, e2)
+///
+/// Define a semantic function for the interpretation of these trees as functions:
+/// [n]           = n * 1'
+/// [(n, e1, e2)] = n * 1' + (λ(x): [e1](2x) [e2](2x-1))
+/// This means the value for an element in some sub-interval is the sum of a base value, common for
+/// the whole interval plus a relative value from the corresponding subtree
+pub struct IntervalTreeClock {}
