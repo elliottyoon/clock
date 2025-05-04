@@ -9,6 +9,7 @@
 //!          logical time (i.e. how many events occurred).
 
 use crate::interval_tree_clock::Event::N;
+use std::cmp::Ordering;
 use std::rc::Rc;
 
 macro_rules! rc {
@@ -124,6 +125,13 @@ impl Stamp {
     fn norm(&self) -> Self {
         Self::new(self.id.norm(), self.event.norm())
     }
+
+    /// Comparison of ITC can be derived from the point-wise comparison, which can be computed
+    /// through a recursive function over normalized event trees; i.e. (i1, e1) <= (i2, e2) if, and
+    /// only if, e1 <= e2.
+    fn leq(&self, other: &Self) -> bool {
+        self.event.leq(&other.event)
+    }
 }
 
 #[derive(Clone)]
@@ -234,6 +242,30 @@ impl Event {
         match self {
             N(n) => *n,
             Event::Split(n, e1, e2) => n + u32::max(e1.max(), e2.max()),
+        }
+    }
+
+    /// We define leq(e1, e2) as follows:
+    /// - leq(n1, n2)                      = n1 <= n2
+    /// - leq(n1, (n2, l2, r2))            = n1 <= n2
+    /// - leq((n1, l1, r1), n2)            = n1 <= n2 AND leq(l1.lift(n1), n2)
+    ///                                               AND leq(r1.lift(n1), n2)
+    /// - leq((n1, l1, r1), (n2, l2, r2))  = n1 <= n2 AND leq(l1.lift(n1), l2.lift(n2))
+    ///                                               AND leq(r1.lift(n1), r2.lift(n2))
+    fn leq(&self, other: &Self) -> bool {
+        use Event::{N, Split};
+
+        match (self, other) {
+            (N(n1), N(n2)) => n1 <= n2,
+            (N(n1), Split(n2, _, _)) => n1 <= n2,
+            (Split(n1, l1, r1), N(n2)) => {
+                let (l1, l2) = (l1.as_ref(), r1.as_ref());
+                n1 <= n2 && l1.lift(*n1).leq(other) && r1.lift(*n1).leq(other)
+            }
+            (Split(n1, l1, r1), Split(n2, l2, r2)) => {
+                let (l1, l2, r1, r2) = (l1.as_ref(), l2.as_ref(), r1.as_ref(), r2.as_ref());
+                n1 <= n2 && l1.lift(*n1).leq(*l2.lift(*n2)) && r1.lift(*n1).leq(*r2.lift(*n2))
+            }
         }
     }
 }
