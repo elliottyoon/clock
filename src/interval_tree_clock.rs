@@ -7,7 +7,6 @@
 //! - id:    binary tree that describes which sub-intervals of [0,1) a process controls, and
 //! - event: another binary tree mapping sub-intervals to non-negative integers that represent the
 //!          logical time (i.e. how many events occurred).
-
 use std::rc::Rc;
 
 /// Define "unit pulse function", 1 : |R -> {0, 1}:
@@ -40,26 +39,6 @@ pub struct IntervalTreeClock {
     stamp: Stamp,
 }
 
-enum Id {
-    /// No ownership over the id's interval domain.
-    None,
-    /// Full ownership over the id's interval domain.
-    All,
-    /// Partitioned ownership over the id's interval domain `[a,b)`, where the first `Rc<Id>`
-    /// represents ownership over `[a,(a+b)/2)` and the second represents ownership of `[(a+b)/2,b)`.
-    Split(Rc<Id>, Rc<Id>),
-}
-
-enum Event {
-    /// Represents an element over its interval domain whose value is constant throughout.
-    N(u32),
-    /// Represents an element `(n, e1, e2)` over an interval `[a,b)` whose value is the sum of a
-    /// base value `n`, common for the whole interval, plus a relative value from each corresponding
-    /// subtree `e1` and `e2`, where `e1` represents an event over the sub-interval `[a,(a+b)/2)`
-    /// `e2` represents an event over `[(a+b)/2, b)`.
-    Split(u32, Rc<Event>, Rc<Event>),
-}
-
 /// A logical clock representation upon which a set of core operations (fork, event, join) models
 /// a causality tracking mechanism.
 struct Stamp {
@@ -78,27 +57,38 @@ struct Stamp {
 //          Traditional descriptions assume a starting number of participants. This can be simulated by starting
 //          from an initial seed stamp and forking several times until the required number of participants is reached.
 impl Stamp {
+    fn new(id: Id, event: Event) -> Self {
+        Self { id, event }
+    }
+
     /// Returns the *seed* stamp, (1,0), from which we can fork as desired to obtain an initial
     /// configuration. This represents full ownership over the entire domain [0,1).
     fn seed() -> Self {
         Self {
-            id: Id::All,
+            id: Id::Full,
             event: Event::N(0),
         }
     }
 
-    // The fork operation allows the cloning of the causal past of a stamp, resulting in a pair of
-    // stamps that have identical copies of the event component and distinct ids; fork(i,e) =
-    // ((i1,e),(i2,e)) such that i2 ̸= i1. Typically, i= i1 and i2 is a new id. In some systems i2
-    // is obtained from an external source of unique ids, e.g. MAC addresses. In contrast, in Bayou
-    // i2 is a function of the original stamp f((i,e)); consecutive forks are assigned distinct ids
-    // since an event is issued to increment a counter after each fork.
-    fn fork() {}
+    fn fork(&self) -> (Self, Self) {
+        let (left_id, right_id) = self.id.fork();
+        (
+            Self::new(left_id, self.event.clone()),
+            Self::new(right_id, self.event.clone()),
+        )
+    }
+
     /// A special case of fork when it is enough to obtain an anonymous stamp (0,e), with “null”
     /// identity, than can be used to transmit causal information but cannot register events,
     /// peek((i,e)) = ((0,e),(i,e)). Anonymous stamps are typically used to create messages or as
     /// inactive copies for later debugging of distributed executions.
-    fn peek() {}
+    fn peek(&self) -> (Self, Self) {
+        (
+            Self::new(Id::Empty, self.event.clone()),
+            Self::new(self.id.clone(), self.event.clone()),
+        )
+    }
+
     /// An event operation adds a new event to the event component, so that if (i,e′) results from
     /// event((i,e)) the causal ordering is such that e < e′. This action does a strict advance in
     /// the partial order such that e′is not dominated by any other entity and does not dominate
@@ -119,4 +109,52 @@ impl Stamp {
     /// be used to terminate an entity and collect its causal past. Also notice that joins can be
     /// applied when both stamps are anonymous, modeling in-transit aggregation of messages.
     fn join() {}
+}
+
+#[derive(Clone)]
+enum Id {
+    /// No ownership over the id's interval domain.
+    Empty,
+    /// Full ownership over the id's interval domain.
+    Full,
+    /// Partitioned ownership over the id's interval domain `[a,b)`, where the first `Rc<Id>`
+    /// represents ownership over `[a,(a+b)/2)` and the second represents ownership of `[(a+b)/2,b)`.
+    Split(Rc<Id>, Rc<Id>),
+}
+
+impl Id {
+    fn fork(&self) -> (Self, Self) {
+        use Id::{Empty, Full, Split};
+        #[inline]
+        fn rc<T>(v: T) -> Rc<T> {
+            Rc::new(v)
+        }
+
+        match self {
+            // No identity: nothing to split.
+            Empty => (Empty, Empty),
+            // Base case: split full interval into halves.
+            Full => (
+                // [0, 0.5)
+                Split(Rc::new(Full), Rc::new(Empty)),
+                // [0.5, 1)
+                Split(Rc::new(Empty), Rc::new(Full)),
+            ),
+            Split(left, right) => {
+                let ((l1, l2), (r1, r2)) = (left.fork(), right.fork());
+                (Split(rc(l1), rc(r1)), Split(rc(l2), rc(r2)))
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+enum Event {
+    /// Represents an element over its interval domain whose value is constant throughout.
+    N(u32),
+    /// Represents an element `(n, e1, e2)` over an interval `[a,b)` whose value is the sum of a
+    /// base value `n`, common for the whole interval, plus a relative value from each corresponding
+    /// subtree `e1` and `e2`, where `e1` represents an event over the sub-interval `[a,(a+b)/2)`
+    /// `e2` represents an event over `[(a+b)/2, b)`.
+    Split(u32, Rc<Event>, Rc<Event>),
 }
