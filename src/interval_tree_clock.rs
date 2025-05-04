@@ -7,7 +7,15 @@
 //! - id:    binary tree that describes which sub-intervals of [0,1) a process controls, and
 //! - event: another binary tree mapping sub-intervals to non-negative integers that represent the
 //!          logical time (i.e. how many events occurred).
+
+use crate::interval_tree_clock::Event::N;
 use std::rc::Rc;
+
+macro_rules! rc {
+    ($val:expr) => {
+        Rc::new($val)
+    };
+}
 
 /// Define "unit pulse function", 1 : |R -> {0, 1}:
 /// 1'(x) := { 1 if 0 <= x < 1;
@@ -125,11 +133,6 @@ enum Id {
 impl Id {
     fn fork(&self) -> (Self, Self) {
         use Id::{Empty, Full, Split};
-        #[inline]
-        fn rc<T>(v: T) -> Rc<T> {
-            Rc::new(v)
-        }
-
         match self {
             // No identity: nothing to split.
             Empty => (Empty, Empty),
@@ -142,7 +145,7 @@ impl Id {
             ),
             Split(left, right) => {
                 let ((l1, l2), (r1, r2)) = (left.fork(), right.fork());
-                (Split(rc(l1), rc(r1)), Split(rc(l2), rc(r2)))
+                (Split(rc!(l1), rc!(r1)), Split(rc!(l2), rc!(r2)))
             }
         }
     }
@@ -157,4 +160,59 @@ enum Event {
     /// subtree `e1` and `e2`, where `e1` represents an event over the sub-interval `[a,(a+b)/2)`
     /// `e2` represents an event over `[(a+b)/2, b)`.
     Split(u32, Rc<Event>, Rc<Event>),
+}
+
+impl Event {
+    fn norm(event: &Self) -> Self {
+        match event {
+            N(n) => N(*n),
+            Event::Split(n, e1, e2) => {
+                let (e1, e2) = (e1.as_ref(), e2.as_ref());
+
+                // norm((n,m,m)) = n + m
+                if let N(m1) = e1 {
+                    if let N(m2) = e2 {
+                        if m1 == m2 {
+                            return N(*n + m1);
+                        }
+                    }
+                }
+
+                // norm((n, e1, e2)) = (n+m, e1.sink(m), e2.sink(m)), where m = min(min(e1), min(e2)).
+                let m = u32::min(e1.min(), e2.min());
+                Self::Split(n + m, rc!(e1.sink(m)), rc!(e2.sink(m)))
+            }
+        }
+    }
+
+    fn lift(&self, m: u32) -> Self {
+        match self {
+            N(n) => N(n + m),
+            Self::Split(n, e1, e2) => Self::Split(n + m, Rc::clone(e1), Rc::clone(e2)),
+        }
+    }
+
+    fn sink(&self, m: u32) -> Self {
+        match self {
+            N(n) => N(n - m),
+            Self::Split(n, e1, e2) => Self::Split(n - m, Rc::clone(e1), Rc::clone(e2)),
+        }
+    }
+
+    /// Returns the minimum value of the function, corresponding to the given tree, in the range
+    /// `[0,1): min(e) = min { [[e]](x) | x in [0,1) }`.
+    fn min(&self) -> u32 {
+        match self {
+            N(n) => *n,
+            Event::Split(n, e1, e2) => n + u32::min(e1.min(), e2.min()),
+        }
+    }
+
+    /// See min() above.
+    fn max(&self) -> u32 {
+        match self {
+            N(n) => *n,
+            Event::Split(n, e1, e2) => n + u32::max(e1.max(), e2.max()),
+        }
+    }
 }
