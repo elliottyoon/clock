@@ -117,7 +117,9 @@ impl Stamp {
     /// reception, where join((i,e1),(0,e2)) = (i,e1 ⊔e2). When both ids are defined, the join can
     /// be used to terminate an entity and collect its causal past. Also notice that joins can be
     /// applied when both stamps are anonymous, modeling in-transit aggregation of messages.
-    fn join() {}
+    fn join(&self, other: &Self) -> Self {
+        Self::new(self.id.sum(&other.id), self.event.join(&other.event))
+    }
 
     /// There can be several equivalent representations for a given function; in ITC we wish to
     /// keep stamps in *normal form* for the representations of both id and event functions, not
@@ -176,6 +178,17 @@ impl Id {
                         Split(rc!(Empty), Rc::clone(r)),
                     )
                 }
+            }
+        }
+    }
+
+    /// Respects the condition that [[sum(i1, i2)]] = [[i1]] + [[i2]] and produces a normalized id.
+    fn sum(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Empty, i @ N(_)) | (i @ N(_), Self::Empty) => i.clone(),
+            (Self::Split(l1, r1), Self::Split(l2, r2)) => {
+                let (l1, l2, r1, r2) = (l1.as_ref(), l2.as_ref(), r1.as_ref(), r2.as_ref());
+                Self::Split(rc!(l1.sum(l2)), rc!(r1.sum(r2))).norm()
             }
         }
     }
