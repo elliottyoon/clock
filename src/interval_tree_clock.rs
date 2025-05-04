@@ -80,7 +80,7 @@ impl Stamp {
     }
 
     fn fork(&self) -> (Self, Self) {
-        let (left_id, right_id) = self.id.fork();
+        let (left_id, right_id) = self.id.split();
         (
             Self::new(left_id, self.event.clone()),
             Self::new(right_id, self.event.clone()),
@@ -146,7 +146,7 @@ enum Id {
 }
 
 impl Id {
-    fn fork(&self) -> (Self, Self) {
+    fn split(&self) -> (Self, Self) {
         use Id::{Empty, Full, Split};
         match self {
             // No identity: nothing to split.
@@ -154,13 +154,28 @@ impl Id {
             // Base case: split full interval into halves.
             Full => (
                 // [0, 0.5)
-                Split(Rc::new(Full), Rc::new(Empty)),
+                Split(rc!(Full), rc!(Empty)),
                 // [0.5, 1)
-                Split(Rc::new(Empty), Rc::new(Full)),
+                Split(rc!(Empty), rc!(Full)),
             ),
-            Split(left, right) => {
-                let ((l1, l2), (r1, r2)) = (left.fork(), right.fork());
-                (Split(rc!(l1), rc!(r1)), Split(rc!(l2), rc!(r2)))
+            Split(l, r) => {
+                // split((0,i)) = ((0, i1), (0, i2)), where (i1, i2) = split(i)
+                if let Empty = *l.as_ref() {
+                    let (i1, i2) = r.split();
+                    (Split(rc!(Empty), rc!(i1)), (Split(rc!(Empty), rc!(i2))))
+                }
+                // split((i, 0)) = ((i1, 0), (i2, 0)), where (i1, i2) = split(i)
+                else if let Empty = *r.as_ref() {
+                    let (i1, i2) = l.split();
+                    (Split(rc!(i1), rc!(Empty)), Split(rc!(i2), rc!(Empty)))
+                }
+                // split((i1, i2)) = ((i1, 0), (0, i2))
+                else {
+                    (
+                        Split(Rc::clone(l), rc!(Empty)),
+                        Split(rc!(Empty), Rc::clone(r)),
+                    )
+                }
             }
         }
     }
