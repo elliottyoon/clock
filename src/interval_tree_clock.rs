@@ -117,6 +117,13 @@ impl Stamp {
     /// be used to terminate an entity and collect its causal past. Also notice that joins can be
     /// applied when both stamps are anonymous, modeling in-transit aggregation of messages.
     fn join() {}
+
+    /// There can be several equivalent representations for a given function; in ITC we wish to
+    /// keep stamps in *normal form* for the representations of both id and event functions, not
+    /// only to have compact representations but also to allow simple definitions on stamps.
+    fn norm(&self) -> Self {
+        Self::new(self.id.norm(), self.event.norm())
+    }
 }
 
 #[derive(Clone)]
@@ -149,6 +156,20 @@ impl Id {
             }
         }
     }
+
+    /// Normalization of the id component can be obtained by recursively applying this function
+    /// when building the id tree.
+    fn norm(&self) -> Self {
+        use Id::{Empty, Full, Split};
+
+        if let Split(Empty, Empty) = self {
+            return Empty;
+        }
+        if let Split(Full, Full) = self {
+            return Full;
+        }
+        self.clone()
+    }
 }
 
 #[derive(Clone)]
@@ -163,8 +184,8 @@ enum Event {
 }
 
 impl Event {
-    fn norm(event: &Self) -> Self {
-        match event {
+    fn norm(&self) -> Self {
+        match self {
             N(n) => N(*n),
             Event::Split(n, e1, e2) => {
                 let (e1, e2) = (e1.as_ref(), e2.as_ref());
@@ -208,7 +229,7 @@ impl Event {
         }
     }
 
-    /// See min() above.
+    /// See Event::min() above.
     fn max(&self) -> u32 {
         match self {
             N(n) => *n,
