@@ -9,8 +9,8 @@
 //!          logical time (i.e. how many events occurred).
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
-use crate::LamportClock;
 use crate::interval_tree_clock::Event::N;
+use crate::LamportClock;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 
@@ -149,6 +149,45 @@ impl Stamp {
     /// then x≤e. In version vectors the event operation increments a counter associated to the
     /// identity in the stamp: ∀k ̸= i. e′[k] = e[k] and e′[i] = e[i] + 1.
     fn event(&self) -> Self {
+        fn fill(stamp: &Stamp) -> Event {
+            match (&stamp.id, &stamp.event) {
+                (Id::Empty, e) => e.clone(),
+                (Id::Full, e) => N(e.max()),
+                (_, n @ N(_)) => n.clone(),
+                (Id::Split(i_left, i_right), Event::Split(n, e_left, e_right)) => {
+                    if **i_left == Id::Full {
+                        // e_right' := fill(i_right, e_right)
+                        let e_right = rc!(fill(&Stamp::new(
+                            i_right.as_ref().clone(),
+                            e_right.as_ref().clone()
+                        )));
+                        // max(max(e_left), min(e_right'))
+                        let max_of_stuff = rc!(N(u32::max(e_left.max(), e_right.min())));
+
+                        Event::Split(*n, max_of_stuff, e_right).norm()
+                    } else if **i_right == Id::Full {
+                        // e_left' := fill(i_left, e_left')
+                        let e_left = rc!(fill(&Stamp::new(
+                            i_left.as_ref().clone(),
+                            e_left.as_ref().clone()
+                        )));
+                        // max(max(e_right), min(e_left'))
+                        let max_of_stuff = rc!(N(u32::max(e_right.max(), e_left.min())));
+
+                        Event::Split(*n, e_left, max_of_stuff).norm()
+                    } else {
+                        let stamp_left =
+                            Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone());
+                        let stamp_right =
+                            Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone());
+                        Event::Split(*n, rc!(fill(&stamp_left)), rc!(fill(&stamp_right))).norm()
+                    }
+                }
+            }
+        }
+
+        fn grow() {}
+
         // Event cannot be applied to anonymous stamps; it has the precondition that the id is
         // non-null, i.e. i != 0.
         assert_ne!(self.id, Id::Empty);
@@ -376,7 +415,7 @@ impl Event {
     /// - leq((n1, l1, r1), (n2, l2, r2))  = n1 <= n2 AND leq(l1.lift(n1), l2.lift(n2))
     ///                                               AND leq(r1.lift(n1), r2.lift(n2))
     fn leq(&self, other: &Self) -> bool {
-        use Event::{N, Split};
+        use Event::{Split, N};
 
         match (self, other) {
             (N(n1), N(n2)) => n1 <= n2,
