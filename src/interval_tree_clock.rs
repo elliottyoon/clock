@@ -9,8 +9,8 @@
 //!          logical time (i.e. how many events occurred).
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
-use crate::interval_tree_clock::Event::N;
 use crate::LamportClock;
+use crate::interval_tree_clock::Event::N;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 
@@ -117,6 +117,13 @@ impl Stamp {
         Self { id, event }
     }
 
+    fn new_from_rcs(id: &Rc<Id>, event: &Rc<Event>) -> Self {
+        Self {
+            id: id.as_ref().clone(),
+            event: event.as_ref().clone(),
+        }
+    }
+
     /// Returns the *seed* stamp, (1,0), from which we can fork as desired to obtain an initial
     /// configuration. This represents full ownership over the entire domain [0,1).
     fn seed() -> Self {
@@ -157,30 +164,18 @@ impl Stamp {
                 (_, n @ N(_)) => n.clone(),
                 (Id::Split(i_left, i_right), Event::Split(n, e_left, e_right)) => {
                     if **i_left == Id::Full {
-                        // e_right' := fill(i_right, e_right)
-                        let e_right = rc!(fill(&Stamp::new(
-                            i_right.as_ref().clone(),
-                            e_right.as_ref().clone()
-                        )));
-                        // max(max(e_left), min(e_right'))
+                        let e_right = rc!(fill(&Stamp::new_from_rcs(i_right, e_right)));
                         let maximus_prime = rc!(N(u32::max(e_left.max(), e_right.min())));
 
                         Event::Split(*n, maximus_prime, e_right).norm()
                     } else if **i_right == Id::Full {
-                        // e_left' := fill(i_left, e_left')
-                        let e_left = rc!(fill(&Stamp::new(
-                            i_left.as_ref().clone(),
-                            e_left.as_ref().clone()
-                        )));
-                        // max(max(e_right), min(e_left'))
+                        let e_left = rc!(fill(&Stamp::new_from_rcs(i_left, e_left,)));
                         let maximus_prime = rc!(N(u32::max(e_right.max(), e_left.min())));
 
                         Event::Split(*n, e_left, maximus_prime).norm()
                     } else {
-                        let stamp_left =
-                            Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone());
-                        let stamp_right =
-                            Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone());
+                        let stamp_left = Stamp::new_from_rcs(i_left, e_left);
+                        let stamp_right = Stamp::new_from_rcs(i_right, e_right);
                         Event::Split(*n, rc!(fill(&stamp_left)), rc!(fill(&stamp_right))).norm()
                     }
                 }
@@ -205,27 +200,17 @@ impl Stamp {
                 // In the case of split events, choose whatever option has the lower cost.
                 (Id::Split(i_left, i_right), Event::Split(n, e_left, e_right)) => {
                     if **i_left == Id::Empty {
-                        let (e_right, cost) = grow(&Stamp::new(
-                            i_right.as_ref().clone(),
-                            e_right.as_ref().clone(),
-                        ));
+                        let (e_right, cost) = grow(&Stamp::new_from_rcs(i_right, e_right));
                         (Event::Split(*n, Rc::clone(e_left), rc!(e_right)), cost + 1)
                     } else if **i_right == Id::Empty {
-                        let (e_left, cost) = grow(&Stamp::new(
-                            i_left.as_ref().clone(),
-                            e_left.as_ref().clone(),
-                        ));
+                        let (e_left, cost) = grow(&Stamp::new_from_rcs(i_left, e_left));
                         (Event::Split(*n, rc!(e_left), Rc::clone(e_right)), cost + 1)
                     } else {
                         let (e_left, e_right, cost) = {
-                            let (new_e_left, cost_left) = grow(&Stamp::new(
-                                i_left.as_ref().clone(),
-                                e_left.as_ref().clone(),
-                            ));
-                            let (new_e_right, cost_right) = grow(&Stamp::new(
-                                i_right.as_ref().clone(),
-                                e_right.as_ref().clone(),
-                            ));
+                            let (new_e_left, cost_left) =
+                                grow(&Stamp::new_from_rcs(i_left, e_left));
+                            let (new_e_right, cost_right) =
+                                grow(&Stamp::new_from_rcs(i_right, e_right));
                             // Choose the cheaper plan.
                             if cost_left < cost_right {
                                 (rc!(new_e_left), Rc::clone(e_right), cost_left)
@@ -496,7 +481,7 @@ impl Event {
     /// - leq((n1, l1, r1), (n2, l2, r2))  = n1 <= n2 AND leq(l1.lift(n1), l2.lift(n2))
     ///                                               AND leq(r1.lift(n1), r2.lift(n2))
     fn leq(&self, other: &Self) -> bool {
-        use Event::{Split, N};
+        use Event::{N, Split};
 
         match (self, other) {
             (N(n1), N(n2)) => n1 <= n2,
