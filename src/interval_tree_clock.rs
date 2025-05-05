@@ -9,7 +9,6 @@
 //!          logical time (i.e. how many events occurred).
 
 use crate::interval_tree_clock::Event::N;
-use std::cmp::Ordering;
 use std::rc::Rc;
 
 macro_rules! rc {
@@ -75,7 +74,7 @@ impl Stamp {
     fn seed() -> Self {
         Self {
             id: Id::Full,
-            event: Event::N(0),
+            event: N(0),
         }
     }
 
@@ -185,10 +184,15 @@ impl Id {
     /// Respects the condition that [[sum(i1, i2)]] = [[i1]] + [[i2]] and produces a normalized id.
     fn sum(&self, other: &Self) -> Self {
         match (self, other) {
-            (Self::Empty, i @ N(_)) | (i @ N(_), Self::Empty) => i.clone(),
+            (Self::Empty, i) | (i, Self::Empty) => i.clone(),
             (Self::Split(l1, r1), Self::Split(l2, r2)) => {
                 let (l1, l2, r1, r2) = (l1.as_ref(), l2.as_ref(), r1.as_ref(), r2.as_ref());
                 Self::Split(rc!(l1.sum(l2)), rc!(r1.sum(r2))).norm()
+            }
+            _ => {
+                // In cases of `(&Id::Full, &Id::Full)` and `(&Id::Full, &Id::Split(_, _))`,
+                // will we ever see get to this point? Who knows...
+                unreachable!()
             }
         }
     }
@@ -198,11 +202,13 @@ impl Id {
     fn norm(&self) -> Self {
         use Id::{Empty, Full, Split};
 
-        if let Split(Empty, Empty) = self {
-            return Empty;
-        }
-        if let Split(Full, Full) = self {
-            return Full;
+        if let Split(l, r) = &*self {
+            if let (Empty, Empty) = (&**l, &**r) {
+                return Empty;
+            }
+            if let (Full, Full) = (&**l, &**r) {
+                return Full;
+            }
         }
         self.clone()
     }
@@ -310,12 +316,12 @@ impl Event {
             (N(n1), N(n2)) => n1 <= n2,
             (N(n1), Split(n2, _, _)) => n1 <= n2,
             (Split(n1, l1, r1), N(n2)) => {
-                let (l1, l2) = (l1.as_ref(), r1.as_ref());
+                let (l1, r1) = (l1.as_ref(), r1.as_ref());
                 n1 <= n2 && l1.lift(*n1).leq(other) && r1.lift(*n1).leq(other)
             }
             (Split(n1, l1, r1), Split(n2, l2, r2)) => {
                 let (l1, l2, r1, r2) = (l1.as_ref(), l2.as_ref(), r1.as_ref(), r2.as_ref());
-                n1 <= n2 && l1.lift(*n1).leq(*l2.lift(*n2)) && r1.lift(*n1).leq(*r2.lift(*n2))
+                n1 <= n2 && l1.lift(*n1).leq(&l2.lift(*n2)) && r1.lift(*n1).leq(&r2.lift(*n2))
             }
         }
     }

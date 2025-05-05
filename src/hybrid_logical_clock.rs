@@ -15,7 +15,7 @@
 //! + performance results, and discussion.
 
 use crate::LamportClock;
-use rsntp::{SntpClient, SntpDuration};
+use rsntp::SntpClient;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MASK_48_MSB: u64 = 0xFFFFFFFFFFFF0000;
