@@ -90,10 +90,11 @@ impl From<Stamp> for IntervalTreeClock {
 
 impl PartialOrd for IntervalTreeClock {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        if self.stamp.leq(&other.stamp) {
-            Some(Ordering::Less)
-        } else {
-            Some(Ordering::Greater)
+        match (self.stamp.leq(&other.stamp), other.stamp.leq(&self.stamp)) {
+            (true, true) => Some(Ordering::Equal),
+            (true, false) => Some(Ordering::Less),
+            (false, true) => Some(Ordering::Greater),
+            (false, false) => None,
         }
     }
 }
