@@ -7,8 +7,11 @@
 //! - id:    binary tree that describes which sub-intervals of [0,1) a process controls, and
 //! - event: another binary tree mapping sub-intervals to non-negative integers that represent the
 //!          logical time (i.e. how many events occurred).
+//!
+//! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
 
 use crate::interval_tree_clock::Event::N;
+use std::cmp::PartialEq;
 use std::rc::Rc;
 
 macro_rules! rc {
@@ -52,6 +55,20 @@ pub struct IntervalTreeClock {
 struct Stamp {
     id: Id,
     event: Event,
+}
+
+impl PartialEq for Id {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Id::Empty, Id::Empty) => true,
+            (Id::Empty, _) => false,
+            (_, Id::Empty) => false,
+            (Id::Full, Id::Full) => true,
+            (Id::Full, _) => false,
+            (_, Id::Full) => false,
+            (Id::Split(l1, l2), Id::Split(r1, r2)) => l1 == r1 && l2 == r2,
+        }
+    }
 }
 
 // Classic operations can be described as a composition of these core operations:
@@ -103,7 +120,11 @@ impl Stamp {
     /// more events than needed: for any other event component xin the system, e′̸≤xand when x<e′
     /// then x≤e. In version vectors the event operation increments a counter associated to the
     /// identity in the stamp: ∀k ̸= i. e′[k] = e[k] and e′[i] = e[i] + 1.
-    fn event() {}
+    fn event(&self) {
+        assert_ne!(self.id, Id::Empty);
+        todo!()
+    }
+
     /// This operation merges two stamps, producing a new one. If join((i1,e1),(i2,e2)) = (i3,e3),
     /// the resulting event component e3 should be such that e1 ≤e3 and e2 ≤e3. Also, e3 should not
     /// dominate 2 more that either e1 and e2 did. This is obtained by the order theoretical join,
@@ -135,7 +156,7 @@ impl Stamp {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum Id {
     /// No ownership over the id's interval domain.
     Empty,
