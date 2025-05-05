@@ -14,6 +14,7 @@ use crate::LamportClock;
 use crate::interval_tree_clock::Event::N;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
+use std::time::UNIX_EPOCH;
 
 macro_rules! rc {
     ($val:expr) => {
@@ -26,33 +27,59 @@ pub struct IntervalTreeClock {
     stamp: Stamp,
 }
 
-// sync:    A sync is the atomic composition of join followed by fork. E.g. In version vector systems and in
-//          bounded version vectors [1] it models the atomic synchronization of two replicas.
-//          Traditional descriptions assume a starting number of participants. This can be simulated by starting
-//          from an initial seed stamp and forking several times until the required number of participants is reached.
-impl LamportClock for IntervalTreeClock {
-    fn bump(&mut self) {
-        todo!()
-    }
-
-    fn send(&mut self) -> Self {
-        self.send_inner()
-    }
-
-    fn receive(&mut self, incoming_clock: &Self) {
-        self.receive_inner(incoming_clock);
-    }
-}
-
 impl IntervalTreeClock {
-    fn send_inner(&self) -> Self {
+    pub fn new() -> Self {
         Self {
-            stamp: self.stamp.event().peek().0,
+            stamp: Stamp::seed(),
         }
     }
 
-    fn receive_inner(&mut self, incoming_clock: &Self) {
+    /// A sync is the atomic composition of join followed by fork, e.g. in version vector systems
+    /// and in bounded version vectors, it models the atomic synchronization of two replicas.
+    pub fn sync(first: &Self, second: &Self) -> (Self, Self) {
+        let (stamp1, stamp2) = first.stamp.join(&second.stamp).fork();
+        (Self::from(stamp1), Self::from(stamp2))
+    }
+
+    /// Traditional descriptions of causal systems assume a starting number of participants, which
+    /// can be simulated here by starting from an initial seed stamp and forking several times
+    /// until the required number of participants is reached.
+    pub fn fork(&self) -> (Self, Self) {
+        let (stamp1, stamp2) = self.stamp.fork();
+        (Self::from(stamp1), Self::from(stamp2))
+    }
+
+    fn bump(&mut self) {
+        self.stamp = self.stamp.event();
+    }
+
+    fn send(&mut self) -> Self {
+        self.bump();
+        Self::from(self.stamp.peek().0)
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
         self.stamp = self.stamp.join(&incoming_clock.stamp).event();
+    }
+}
+
+impl LamportClock for IntervalTreeClock {
+    fn bump(&mut self) {
+        IntervalTreeClock::bump(self)
+    }
+
+    fn send(&mut self) -> Self {
+        IntervalTreeClock::send(self)
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
+        IntervalTreeClock::receive(self, incoming_clock)
+    }
+}
+
+impl From<Stamp> for IntervalTreeClock {
+    fn from(stamp: Stamp) -> Self {
+        IntervalTreeClock { stamp }
     }
 }
 
