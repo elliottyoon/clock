@@ -9,8 +9,8 @@
 //!          logical time (i.e. how many events occurred).
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
-use crate::interval_tree_clock::Event::N;
 use crate::LamportClock;
+use crate::interval_tree_clock::Event::N;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 
@@ -149,6 +149,7 @@ impl Stamp {
     /// then x≤e. In version vectors the event operation increments a counter associated to the
     /// identity in the stamp: ∀k ̸= i. e′[k] = e[k] and e′[i] = e[i] + 1.
     fn event(&self) -> Self {
+        // Fill either succeeds in doing one or more simplifications, or returns an unmodified tree.
         fn fill(stamp: &Stamp) -> Event {
             match (&stamp.id, &stamp.event) {
                 (Id::Empty, e) => e.clone(),
@@ -162,9 +163,9 @@ impl Stamp {
                             e_right.as_ref().clone()
                         )));
                         // max(max(e_left), min(e_right'))
-                        let max_of_stuff = rc!(N(u32::max(e_left.max(), e_right.min())));
+                        let maximus_prime = rc!(N(u32::max(e_left.max(), e_right.min())));
 
-                        Event::Split(*n, max_of_stuff, e_right).norm()
+                        Event::Split(*n, maximus_prime, e_right).norm()
                     } else if **i_right == Id::Full {
                         // e_left' := fill(i_left, e_left')
                         let e_left = rc!(fill(&Stamp::new(
@@ -172,9 +173,9 @@ impl Stamp {
                             e_left.as_ref().clone()
                         )));
                         // max(max(e_right), min(e_left'))
-                        let max_of_stuff = rc!(N(u32::max(e_right.max(), e_left.min())));
+                        let maximus_prime = rc!(N(u32::max(e_right.max(), e_left.min())));
 
-                        Event::Split(*n, e_left, max_of_stuff).norm()
+                        Event::Split(*n, e_left, maximus_prime).norm()
                     } else {
                         let stamp_left =
                             Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone());
@@ -185,8 +186,28 @@ impl Stamp {
                 }
             }
         }
+        // Performs a dynamic programming optimization to choose the inflation that, given the
+        // available id tree, can be performed to minimize the cost of the event tree growth. It is
+        // defined recursively, returning the new event tree and cost, so that
+        // - incrementing an integer is preferable over expanding an integer to a tuple,
+        // - to disambiguate, an operation near the root is preferable to one farther away.
+        fn grow(stamp: &Stamp) -> (Event, u64) {
+            // Surely, most realistic Interval Tree Clock trees stay well under depth 1000...
+            const GREATER_THAN_MAX_TREE_DEPTH: u64 = 1000;
 
-        fn grow() {}
+            match (&stamp.id, &stamp.event) {
+                // Incrementing an integer has cost zero, as it's preferable to all other options.
+                (Id::Full, N(n)) => (N(n + 1), 0),
+                (i, N(n)) => {
+                    let (e, cost) = grow(&Stamp::new(i.clone(), Event::split_from(n)));
+                    (e, cost + GREATER_THAN_MAX_TREE_DEPTH)
+                }
+                // grow((0,ir),(n,el,er))
+                // grow((il,0),(n,el,er))
+                // grow((il,ir),(n,el,er))
+                _ => todo!(),
+            }
+        }
 
         // Event cannot be applied to anonymous stamps; it has the precondition that the id is
         // non-null, i.e. i != 0.
@@ -331,17 +352,18 @@ enum Event {
 }
 
 impl Event {
+    #[inline]
+    fn split_from(n: &u32) -> Event {
+        Event::Split(*n, Rc::new(N(0)), Rc::new(N(0)))
+    }
+
     fn join(&self, other: &Self) -> Self {
         use Event::*;
-        #[inline]
-        fn split_from(n: &u32) -> Event {
-            Split(*n, Rc::new(N(0)), Rc::new(N(0)))
-        }
 
         match (self, other) {
             (N(n1), N(n2)) => N(if n1 > n2 { *n1 } else { *n2 }),
-            (N(n1), Split(_, _, _)) => split_from(n1).join(other),
-            (Split(_, _, _), N(n2)) => self.join(&split_from(n2)),
+            (N(n1), Split(_, _, _)) => Event::split_from(n1).join(other),
+            (Split(_, _, _), N(n2)) => self.join(&Event::split_from(n2)),
             (Split(n1, l1, r1), Split(n2, l2, r2)) => {
                 if n1 > n2 {
                     other.join(self)
@@ -415,7 +437,7 @@ impl Event {
     /// - leq((n1, l1, r1), (n2, l2, r2))  = n1 <= n2 AND leq(l1.lift(n1), l2.lift(n2))
     ///                                               AND leq(r1.lift(n1), r2.lift(n2))
     fn leq(&self, other: &Self) -> bool {
-        use Event::{Split, N};
+        use Event::{N, Split};
 
         match (self, other) {
             (N(n1), N(n2)) => n1 <= n2,
