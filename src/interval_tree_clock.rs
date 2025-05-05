@@ -21,59 +21,54 @@ macro_rules! rc {
     };
 }
 
-/// Define "unit pulse function", 1 : |R -> {0, 1}:
-/// 1'(x) := { 1 if 0 <= x < 1;
-///            0 if x < 0 or x >= 1 }
-///
-/// Define an "id tree" with recursive form (where i, i1, i2 range over id trees):
-/// i := 0 | 1 | (i1, i2)
-///
-/// Define a semantic function [] for the interpretation of id trees:
-/// [0]        = 0' : |R -> {0, 1}
-/// [1]        = 1' : |R -> {0, 1}
-/// [(i1, i2)] = λ(x): [i1](2x) + [i2](2x-1)
-/// These functions can be 1 for some sub-intervals of [0, 1) and 0 otherwise. For an id (i1, i2),
-/// the functions corresponding to the two subtrees are transformed to be non-zero in two
-/// non-overlapping sub-intervals: i1 in the interval [0, 1/2) and i2 in [1/2, 1). For example, the
-/// id (1, (0,1)) represents the function 1'(2x) + 1'(2x-1)(2x-1).
-///
-/// The event component is a binary event tree with non-negative integers in nodes: using e, e1, e2
-/// to range over event trees and n over non-negative integers:
-/// e := n | (n, e1, e2)
-///
-/// Define a semantic function for the interpretation of these trees as functions:
-/// [n]           = n * 1'
-/// [(n, e1, e2)] = n * 1' + (λ(x): [e1](2x) [e2](2x-1))
-/// This means the value for an element in some sub-interval is the sum of a base value, common for
-/// the whole interval plus a relative value from the corresponding subtree.
 #[repr(transparent)]
 pub struct IntervalTreeClock {
     stamp: Stamp,
 }
 
+// sync:    A sync is the atomic composition of join followed by fork. E.g. In version vector systems and in
+//          bounded version vectors [1] it models the atomic synchronization of two replicas.
+//          Traditional descriptions assume a starting number of participants. This can be simulated by starting
+//          from an initial seed stamp and forking several times until the required number of participants is reached.
 impl LamportClock for IntervalTreeClock {
     fn bump(&mut self) {
         todo!()
     }
 
     fn send(&mut self) -> Self {
-        todo!()
+        self.send_inner()
     }
 
     fn receive(&mut self, incoming_clock: &Self) {
-        todo!()
+        self.receive_inner(incoming_clock);
+    }
+}
+
+impl IntervalTreeClock {
+    fn send_inner(&self) -> Self {
+        Self {
+            stamp: self.stamp.event().peek().0,
+        }
+    }
+
+    fn receive_inner(&mut self, incoming_clock: &Self) {
+        self.stamp = self.stamp.join(&incoming_clock.stamp).event();
     }
 }
 
 impl PartialOrd for IntervalTreeClock {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        todo!()
+        if self.stamp.leq(&other.stamp) {
+            Some(Ordering::Less)
+        } else {
+            Some(Ordering::Greater)
+        }
     }
 }
 
 impl PartialEq<Self> for IntervalTreeClock {
     fn eq(&self, other: &Self) -> bool {
-        todo!()
+        self.stamp.leq(&other.stamp) && other.stamp.leq(&self.stamp)
     }
 }
 
@@ -84,16 +79,6 @@ struct Stamp {
     event: Event,
 }
 
-// Classic operations can be described as a composition of these core operations:
-//
-// send:    This operation is the atomic composition of event followed by peek. E.g. in vector clock systems,
-//          message sending is modeled by incrementing the local counter and then creating a new message.
-// receive: A receive is the atomic composition of join followed by event. E.g. in vector clocks taking the
-//          point-wise maximum is followed by an increment of the local counter.
-// sync:    A sync is the atomic composition of join followed by fork. E.g. In version vector systems and in
-//          bounded version vectors [1] it models the atomic synchronization of two replicas.
-//          Traditional descriptions assume a starting number of participants. This can be simulated by starting
-//          from an initial seed stamp and forking several times until the required number of participants is reached.
 impl Stamp {
     fn new(id: Id, event: Event) -> Self {
         Self { id, event }
@@ -133,7 +118,7 @@ impl Stamp {
     /// more events than needed: for any other event component xin the system, e′̸≤xand when x<e′
     /// then x≤e. In version vectors the event operation increments a counter associated to the
     /// identity in the stamp: ∀k ̸= i. e′[k] = e[k] and e′[i] = e[i] + 1.
-    fn event(&self) {
+    fn event(&self) -> Self {
         // Event cannot be applied to anonymous stamps; it has the precondition that the id is
         // non-null, i.e. i != 0.
         assert_ne!(self.id, Id::Empty);
