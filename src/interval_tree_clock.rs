@@ -9,12 +9,10 @@
 //!          logical time (i.e. how many events occurred).
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
-
 use crate::LamportClock;
 use crate::interval_tree_clock::Event::N;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
-use std::time::UNIX_EPOCH;
 
 macro_rules! rc {
     ($val:expr) => {
@@ -24,6 +22,13 @@ macro_rules! rc {
 
 #[repr(transparent)]
 pub struct IntervalTreeClock {
+    /// The underlying representation of an `IntervalTreeClock` is a `Stamp`, which encodes the
+    /// state of the logical clock. While the two types are functionally equivalent, I'm separating
+    /// them to maintain conceptual clarity (since I already know my brain will probably hurt when
+    /// revisiting the code).
+    ///
+    /// Thanks to `#[repr(transparent)]`, this wrapper introduces no additional memory overhead,
+    /// and the abstraction cost is limited to method dispatch.
     stamp: Stamp,
 }
 
@@ -54,8 +59,8 @@ impl IntervalTreeClock {
     }
 
     fn send(&mut self) -> Self {
-        self.bump();
-        Self::from(self.stamp.peek().0)
+        IntervalTreeClock::bump(self);
+        Self::from(self.stamp.peek())
     }
 
     fn receive(&mut self, incoming_clock: &Self) {
@@ -132,11 +137,8 @@ impl Stamp {
     /// identity, than can be used to transmit causal information but cannot register events,
     /// peek((i,e)) = ((0,e),(i,e)). Anonymous stamps are typically used to create messages or as
     /// inactive copies for later debugging of distributed executions.
-    fn peek(&self) -> (Self, Self) {
-        (
-            Self::new(Id::Empty, self.event.clone()),
-            Self::new(self.id.clone(), self.event.clone()),
-        )
+    fn peek(&self) -> Self {
+        Self::new(Id::Empty, self.event.clone())
     }
 
     /// An event operation adds a new event to the event component, so that if (i,e′) results from
