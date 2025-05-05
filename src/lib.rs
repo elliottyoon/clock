@@ -12,9 +12,6 @@ pub trait LamportClock: PartialOrd {
     fn receive(&mut self, incoming_clock: &Self);
 }
 
-/// TODO(elliottyoon): VersionVectors
-mod version_vector;
-
 /// The (Lamport) Clock Condition gives that if `a` happens before `b` (denoted `a -> b`), then
 /// `TS(a) < TS(b)`. Vector clocks guarantee a stronger condition: `a -> b` <=> `TS(a) < TS(b)`.
 pub mod vector_clock;
@@ -32,6 +29,7 @@ mod interval_tree_clock;
 mod tests {
     use super::*;
     use crate::hybrid_logical_clock::HybridLogicalClock;
+    use crate::interval_tree_clock::IntervalTreeClock;
     use crate::vector_clock::VectorClock;
 
     #[test]
@@ -40,5 +38,6 @@ mod tests {
         // Will fail to compile if the given types don't implement the LamportClock trait.
         assert_impl::<VectorClock>();
         assert_impl::<HybridLogicalClock>();
+        assert_impl::<IntervalTreeClock>();
     }
 }

@@ -10,8 +10,9 @@
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
 
+use crate::LamportClock;
 use crate::interval_tree_clock::Event::N;
-use std::cmp::PartialEq;
+use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 
 macro_rules! rc {
@@ -50,25 +51,37 @@ pub struct IntervalTreeClock {
     stamp: Stamp,
 }
 
+impl LamportClock for IntervalTreeClock {
+    fn bump(&mut self) {
+        todo!()
+    }
+
+    fn send(&mut self) -> Self {
+        todo!()
+    }
+
+    fn receive(&mut self, incoming_clock: &Self) {
+        todo!()
+    }
+}
+
+impl PartialOrd for IntervalTreeClock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        todo!()
+    }
+}
+
+impl PartialEq<Self> for IntervalTreeClock {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
 /// A logical clock representation upon which a set of core operations (fork, event, join) models
 /// a causality tracking mechanism.
 struct Stamp {
     id: Id,
     event: Event,
-}
-
-impl PartialEq for Id {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Id::Empty, Id::Empty) => true,
-            (Id::Empty, _) => false,
-            (_, Id::Empty) => false,
-            (Id::Full, Id::Full) => true,
-            (Id::Full, _) => false,
-            (_, Id::Full) => false,
-            (Id::Split(l1, l2), Id::Split(r1, r2)) => l1 == r1 && l2 == r2,
-        }
-    }
 }
 
 // Classic operations can be described as a composition of these core operations:
@@ -121,7 +134,10 @@ impl Stamp {
     /// then x≤e. In version vectors the event operation increments a counter associated to the
     /// identity in the stamp: ∀k ̸= i. e′[k] = e[k] and e′[i] = e[i] + 1.
     fn event(&self) {
+        // Event cannot be applied to anonymous stamps; it has the precondition that the id is
+        // non-null, i.e. i != 0.
         assert_ne!(self.id, Id::Empty);
+
         todo!()
     }
 
@@ -232,6 +248,20 @@ impl Id {
             }
         }
         self.clone()
+    }
+}
+
+impl PartialEq for Id {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Id::Empty, Id::Empty) => true,
+            (Id::Empty, _) => false,
+            (_, Id::Empty) => false,
+            (Id::Full, Id::Full) => true,
+            (Id::Full, _) => false,
+            (_, Id::Full) => false,
+            (Id::Split(l1, l2), Id::Split(r1, r2)) => l1 == r1 && l2 == r2,
+        }
     }
 }
 
