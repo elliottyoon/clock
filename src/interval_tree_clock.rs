@@ -164,7 +164,7 @@ impl Id {
                 // split((0,i)) = ((0, i1), (0, i2)), where (i1, i2) = split(i)
                 if let Empty = *l.as_ref() {
                     let (i1, i2) = r.split();
-                    (Split(rc!(Empty), rc!(i1)), (Split(rc!(Empty), rc!(i2))))
+                    (Split(rc!(Empty), rc!(i1)), Split(rc!(Empty), rc!(i2)))
                 }
                 // split((i, 0)) = ((i1, 0), (i2, 0)), where (i1, i2) = split(i)
                 else if let Empty = *r.as_ref() {
@@ -220,6 +220,29 @@ enum Event {
 }
 
 impl Event {
+    fn join(&self, other: &Self) -> Self {
+        use Event::*;
+        #[inline]
+        fn split_from(n: &u32) -> Event {
+            Split(*n, Rc::new(N(0)), Rc::new(N(0)))
+        }
+
+        match (self, other) {
+            (N(n1), N(n2)) => N(if n1 > n2 { *n1 } else { *n2 }),
+            (N(n1), Split(_, _, _)) => split_from(n1).join(other),
+            (Split(_, _, _), N(n2)) => self.join(&split_from(n2)),
+            (Split(n1, l1, r1), Split(n2, l2, r2)) => {
+                if n1 > n2 {
+                    other.join(self)
+                } else {
+                    let n = n2 - n1;
+                    let (left, right) = (l1.join(&l2.lift(n)), r1.join(&r2.lift(n)));
+                    Split(*n1, rc!(left), rc!(right)).norm()
+                }
+            }
+        }
+    }
+
     fn norm(&self) -> Self {
         match self {
             N(n) => N(*n),
