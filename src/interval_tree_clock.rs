@@ -205,15 +205,27 @@ impl Stamp {
                 // In the case of split events, choose whatever option has the lower cost.
                 (Id::Split(i_left, i_right), Event::Split(n, e_left, e_right)) => {
                     if **i_left == Id::Empty {
-                        let (e_right, cost) = grow(&Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone()));
+                        let (e_right, cost) = grow(&Stamp::new(
+                            i_right.as_ref().clone(),
+                            e_right.as_ref().clone(),
+                        ));
                         (Event::Split(*n, Rc::clone(e_left), rc!(e_right)), cost + 1)
                     } else if **i_right == Id::Empty {
-                        let (e_left, cost) = grow(&Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone()));
+                        let (e_left, cost) = grow(&Stamp::new(
+                            i_left.as_ref().clone(),
+                            e_left.as_ref().clone(),
+                        ));
                         (Event::Split(*n, rc!(e_left), Rc::clone(e_right)), cost + 1)
                     } else {
                         let (e_left, e_right, cost) = {
-                            let (new_e_left, cost_left) = grow(&Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone()));
-                            let (new_e_right, cost_right) = grow(&Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone()));
+                            let (new_e_left, cost_left) = grow(&Stamp::new(
+                                i_left.as_ref().clone(),
+                                e_left.as_ref().clone(),
+                            ));
+                            let (new_e_right, cost_right) = grow(&Stamp::new(
+                                i_right.as_ref().clone(),
+                                e_right.as_ref().clone(),
+                            ));
                             // Choose the cheaper plan.
                             if cost_left < cost_right {
                                 (rc!(new_e_left), Rc::clone(e_right), cost_left)
@@ -224,8 +236,10 @@ impl Stamp {
                         (Event::Split(*n, e_left, e_right), cost + 1)
                     }
                 }
-                (Id::Full, _) => unreachable!("Invariant violation: if we truly have full ownership \
-                                                you should never end up with a Split event."),
+                (Id::Full, _) => unreachable!(
+                    "Invariant violation: if we truly have full ownership \
+                                                you should never end up with a Split event."
+                ),
                 (Id::Empty, _) => unreachable!("Cannot apply event to anonymous stamps!"),
             }
         }
@@ -234,7 +248,16 @@ impl Stamp {
         // non-null, i.e. i != 0.
         assert_ne!(self.id, Id::Empty);
 
-        todo!()
+        let new_event = {
+            let filled_event = fill(self);
+            if filled_event == self.event {
+                filled_event
+            } else {
+                let (grown_event, _cost) = grow(self);
+                grown_event
+            }
+        };
+        Self::new(self.id.clone(), new_event)
     }
 
     /// This operation merges two stamps, producing a new one. If join((i1,e1),(i2,e2)) = (i3,e3),
@@ -370,6 +393,21 @@ enum Event {
     /// subtree `e1` and `e2`, where `e1` represents an event over the sub-interval `[a,(a+b)/2)`
     /// `e2` represents an event over `[(a+b)/2, b)`.
     Split(u32, Rc<Event>, Rc<Event>),
+}
+
+impl PartialEq<Event> for Event {
+    fn eq(&self, other: &Event) -> bool {
+        match (self, other) {
+            (N(n1), N(n2)) => n1 == n2,
+            (N(_), _) => false,
+            (_, N(_)) => false,
+            (Self::Split(n1, e1_left, e1_right), Self::Split(n2, e2_left, e2_right)) => {
+                n1 == n2
+                    && e1_left.as_ref() == e2_left.as_ref()
+                    && e1_right.as_ref() == e2_right.as_ref()
+            }
+        }
+    }
 }
 
 impl Event {
