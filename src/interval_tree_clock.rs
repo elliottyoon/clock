@@ -9,8 +9,8 @@
 //!          logical time (i.e. how many events occurred).
 //!
 //! Full details in "Interval Tree Clocks: A Logical Clock for Dynamic Systems" by Almeida et al.
-use crate::LamportClock;
 use crate::interval_tree_clock::Event::N;
+use crate::LamportClock;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 
@@ -202,10 +202,31 @@ impl Stamp {
                     let (e, cost) = grow(&Stamp::new(i.clone(), Event::split_from(n)));
                     (e, cost + GREATER_THAN_MAX_TREE_DEPTH)
                 }
-                // grow((0,ir),(n,el,er))
-                // grow((il,0),(n,el,er))
-                // grow((il,ir),(n,el,er))
-                _ => todo!(),
+                // In the case of split events, choose whatever option has the lower cost.
+                (Id::Split(i_left, i_right), Event::Split(n, e_left, e_right)) => {
+                    if **i_left == Id::Empty {
+                        let (e_right, cost) = grow(&Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone()));
+                        (Event::Split(*n, Rc::clone(e_left), rc!(e_right)), cost + 1)
+                    } else if **i_right == Id::Empty {
+                        let (e_left, cost) = grow(&Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone()));
+                        (Event::Split(*n, rc!(e_left), Rc::clone(e_right)), cost + 1)
+                    } else {
+                        let (e_left, e_right, cost) = {
+                            let (new_e_left, cost_left) = grow(&Stamp::new(i_left.as_ref().clone(), e_left.as_ref().clone()));
+                            let (new_e_right, cost_right) = grow(&Stamp::new(i_right.as_ref().clone(), e_right.as_ref().clone()));
+                            // Choose the cheaper plan.
+                            if cost_left < cost_right {
+                                (rc!(new_e_left), Rc::clone(e_right), cost_left)
+                            } else {
+                                (Rc::clone(e_left), rc!(new_e_right), cost_right)
+                            }
+                        };
+                        (Event::Split(*n, e_left, e_right), cost + 1)
+                    }
+                }
+                (Id::Full, _) => unreachable!("Invariant violation: if we truly have full ownership \
+                                                you should never end up with a Split event."),
+                (Id::Empty, _) => unreachable!("Cannot apply event to anonymous stamps!"),
             }
         }
 
@@ -437,7 +458,7 @@ impl Event {
     /// - leq((n1, l1, r1), (n2, l2, r2))  = n1 <= n2 AND leq(l1.lift(n1), l2.lift(n2))
     ///                                               AND leq(r1.lift(n1), r2.lift(n2))
     fn leq(&self, other: &Self) -> bool {
-        use Event::{N, Split};
+        use Event::{Split, N};
 
         match (self, other) {
             (N(n1), N(n2)) => n1 <= n2,
